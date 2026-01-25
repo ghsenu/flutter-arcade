@@ -9,11 +9,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Catch the Stars',
-      theme: ThemeData(useMaterial3: true),
-      home: const CatchStarsGame(),
+      home: CatchStarsGame(),
     );
   }
 }
@@ -26,259 +24,162 @@ class CatchStarsGame extends StatefulWidget {
 }
 
 class _CatchStarsGameState extends State<CatchStarsGame> {
-  final _rng = Random();
+  final Random _random = Random();
 
-  // Game state
   bool isPlaying = false;
   int score = 0;
-  int timeLeft = 30;
   int lives = 3;
 
   // Basket
-  final double basketWidth = 130;
+  double basketX = 120;
+  final double basketWidth = 120;
   final double basketHeight = 30;
-  double basketX = 0;
 
   // Star
-  final double starSize = 40;
-  double starX = 0;
+  double starX = 100;
   double starY = -40;
-  double starSpeed = 260; // px/second
+  double starSpeed = 100; // Start slow, increases over time
 
-  Timer? _tick;
-  Timer? _secondTimer;
-  DateTime? _lastFrame;
+  Timer? gameTimer;
 
-  void startGame(Size area) {
-    _tick?.cancel();
-    _secondTimer?.cancel();
-
+  void startGame(Size size) {
     setState(() {
       isPlaying = true;
       score = 0;
-      timeLeft = 30;
       lives = 3;
-      starSpeed = 260;
-      basketX = (area.width - basketWidth) / 2;
+      basketX = (size.width - basketWidth) / 2;
+      spawnStar(size);
     });
 
-    spawnStar(area);
-
-    _lastFrame = DateTime.now();
-    _tick = Timer.periodic(const Duration(milliseconds: 16), (_) => update(area));
-
-    _secondTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => timeLeft--);
-      if (timeLeft <= 0) endGame();
-    });
+    gameTimer?.cancel();
+    gameTimer = Timer.periodic(
+      const Duration(milliseconds: 16),
+      (_) => updateGame(size),
+    );
   }
 
   void endGame() {
-    _tick?.cancel();
-    _secondTimer?.cancel();
+    gameTimer?.cancel();
     setState(() => isPlaying = false);
   }
 
-  void spawnStar(Size area) {
-    final maxX = max(0.0, area.width - starSize);
-    setState(() {
-      starX = _rng.nextDouble() * maxX;
-      starY = -starSize;
-    });
+  void spawnStar(Size size) {
+    starX = _random.nextDouble() * (size.width - 40);
+    starY = -40;
   }
 
-  void update(Size area) {
+  void updateGame(Size size) {
     if (!isPlaying) return;
 
-    final now = DateTime.now();
-    final dt = _lastFrame == null
-        ? 0.016
-        : (now.difference(_lastFrame!).inMilliseconds / 1000.0);
-    _lastFrame = now;
+    starY += starSpeed * 0.016;
 
-    // Move star
-    starY += starSpeed * dt;
+    // Keep basket inside screen
+    basketX = basketX.clamp(0.0, size.width - basketWidth);
 
-    // Basket position clamp
-    basketX = basketX.clamp(0.0, max(0.0, area.width - basketWidth));
+    double basketY = size.height - 60;
 
     // Collision
-    final basketY = area.height - basketHeight - 22;
-    final basketRect = Rect.fromLTWH(basketX, basketY, basketWidth, basketHeight);
-    final starRect = Rect.fromLTWH(starX, starY, starSize, starSize);
-
-    // Catch
-    if (starRect.overlaps(basketRect)) {
+    if (starY + 40 >= basketY &&
+        starX + 40 >= basketX &&
+        starX <= basketX + basketWidth) {
       setState(() {
-        score += 1;
-        // make it harder gradually
-        starSpeed = min(700, starSpeed + 18);
+        score++;
+        starSpeed += 20;
       });
-      spawnStar(area);
-      return;
+      spawnStar(size);
     }
 
     // Miss
-    if (starY > area.height + starSize) {
-      setState(() {
-        lives -= 1;
-      });
+    if (starY > size.height) {
+      setState(() => lives--);
       if (lives <= 0) {
         endGame();
       } else {
-        spawnStar(area);
+        spawnStar(size);
       }
-      return;
     }
 
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _tick?.cancel();
-    _secondTimer?.cancel();
-    super.dispose();
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Catch the Falling Stars'), centerTitle: true),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final area = Size(constraints.maxWidth, constraints.maxHeight);
+      appBar: AppBar(title: const Text('Catch the Falling Stars')),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = constraints.biggest;
 
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: Container(color: Colors.grey.shade100),
-                ),
+          return Stack(
+            children: [
+              // Background
+              Container(color: Colors.grey.shade200),
 
-                // HUD
+              // Score & lives
+              Positioned(top: 10, left: 10, child: Text('Score: $score')),
+              Positioned(top: 10, right: 10, child: Text('Lives: ❤️' * lives)),
+
+              // Star
+              if (isPlaying)
                 Positioned(
-                  top: 12,
-                  left: 12,
-                  right: 12,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _pill('Score: $score'),
-                      _pill('Time: $timeLeft'),
-                      _pill('Lives: ${'❤️' * lives}'),
-                    ],
+                  left: starX,
+                  top: starY,
+                  child: const Icon(Icons.star, size: 40, color: Colors.amber),
+                ),
+
+              // Basket
+              if (isPlaying)
+                Positioned(
+                  left: basketX,
+                  bottom: 20,
+                  child: Container(
+                    width: basketWidth,
+                    height: basketHeight,
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                          color: Colors.black.withOpacity(0.2),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      'BASKET',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ),
 
-                // Star
-                if (isPlaying)
-                  Positioned(
-                    left: starX,
-                    top: starY,
-                    child: Icon(Icons.star, size: starSize, color: Colors.amber),
+              // Start / Game Over
+              if (!isPlaying)
+                Center(
+                  child: ElevatedButton(
+                    onPressed: () => startGame(size),
+                    child: Text(score == 0 ? 'Start Game' : 'Play Again'),
                   ),
+                ),
 
-                // Drag control
+              // 👇 FULL SCREEN DRAG - Must be LAST to capture all touches
+              if (isPlaying)
                 Positioned.fill(
                   child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanUpdate: (details) {
-                      if (!isPlaying) return;
-                      setState(() => basketX += details.delta.dx);
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragUpdate: (details) {
+                      setState(() {
+                        basketX += details.delta.dx;
+                      });
                     },
                     child: const SizedBox.expand(),
                   ),
                 ),
-
-                // Basket
-                if (isPlaying)
-                  Positioned(
-                    left: basketX,
-                    bottom: 18,
-                    child: Container(
-                      width: basketWidth,
-                      height: basketHeight,
-                      decoration: BoxDecoration(
-                        color: Colors.deepPurple,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                            color: Colors.black.withOpacity(0.15),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        'BASKET',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-
-                // Start / Game Over overlay
-                if (!isPlaying)
-                  Positioned.fill(
-                    child: Container(
-                      color: Colors.black.withOpacity(0.35),
-                      child: Center(
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(20),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  timeLeft == 30 ? 'Ready?' : 'Game Over!',
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                if (timeLeft != 30)
-                                  Text('Final score: $score',
-                                      style: const TextStyle(fontSize: 16)),
-                                const SizedBox(height: 14),
-                                FilledButton(
-                                  onPressed: () => startGame(area),
-                                  child: Text(timeLeft == 30 ? 'Start' : 'Play Again'),
-                                ),
-                                const SizedBox(height: 8),
-                                const Text('Drag anywhere to move the basket.'),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
+            ],
+          );
+        },
       ),
-    );
-  }
-
-  Widget _pill(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-            color: Colors.black.withOpacity(0.08),
-          ),
-        ],
-      ),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
     );
   }
 }
