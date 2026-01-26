@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 void main() => runApp(const MyApp());
 
@@ -26,6 +27,11 @@ class CatchStarsGame extends StatefulWidget {
 class _CatchStarsGameState extends State<CatchStarsGame> {
   final Random _random = Random();
 
+  // Sound players
+  final AudioPlayer _catchPlayer = AudioPlayer();
+  final AudioPlayer _missPlayer = AudioPlayer();
+  final AudioPlayer _gameOverPlayer = AudioPlayer();
+
   bool isPlaying = false;
   int score = 0;
   int lives = 3;
@@ -41,6 +47,27 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
   double starSpeed = 100; // Start slow, increases over time
 
   Timer? gameTimer;
+
+  void _playCatchSound() {
+    _catchPlayer.play(UrlSource('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'));
+  }
+
+  void _playMissSound() {
+    _missPlayer.play(UrlSource('https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3'));
+  }
+
+  void _playGameOverSound() {
+    _gameOverPlayer.play(UrlSource('https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3'));
+  }
+
+  @override
+  void dispose() {
+    _catchPlayer.dispose();
+    _missPlayer.dispose();
+    _gameOverPlayer.dispose();
+    gameTimer?.cancel();
+    super.dispose();
+  }
 
   void startGame(Size size) {
     setState(() {
@@ -60,6 +87,7 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
 
   void endGame() {
     gameTimer?.cancel();
+    _playGameOverSound();
     setState(() => isPlaying = false);
   }
 
@@ -82,6 +110,7 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
     if (starY + 40 >= basketY &&
         starX + 40 >= basketX &&
         starX <= basketX + basketWidth) {
+      _playCatchSound();
       setState(() {
         score++;
         starSpeed += 20;
@@ -91,6 +120,7 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
 
     // Miss
     if (starY > size.height) {
+      _playMissSound();
       setState(() => lives--);
       if (lives <= 0) {
         endGame();
