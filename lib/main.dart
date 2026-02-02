@@ -51,7 +51,7 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
   // Star
   double starX = 100;
   double starY = -40;
-  double starSpeed = 100; // Start slow, increases over time
+  double starSpeed = 200; // Start faster, increases over time
 
   Timer? gameTimer;
 
@@ -173,7 +173,7 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
       _updateCombo();
       setState(() {
         score += comboMultiplier; // Apply combo multiplier to score
-        starSpeed += 20;
+        starSpeed += 40;
       });
       spawnStar(size);
     }
