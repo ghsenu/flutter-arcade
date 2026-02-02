@@ -314,30 +314,14 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
                   child: const Icon(Icons.star, size: 40, color: Colors.amber),
                 ),
 
-              // Basket
+              // Basket - Realistic Design
               if (isPlaying)
                 Positioned(
                   left: basketX,
                   bottom: 20,
-                  child: Container(
-                    width: basketWidth,
-                    height: basketHeight,
-                    decoration: BoxDecoration(
-                      color: Colors.deepPurple,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                          color: Colors.black.withOpacity(0.2),
-                        ),
-                      ],
-                    ),
-                    alignment: Alignment.center,
-                    child: const Text(
-                      'BASKET',
-                      style: TextStyle(color: Colors.white),
-                    ),
+                  child: CustomPaint(
+                    size: Size(basketWidth, basketHeight + 20),
+                    painter: BasketPainter(),
                   ),
                 ),
 
@@ -367,6 +351,135 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
           );
         },
       ),
-    );
+    ) ;
   }
+}
+
+class BasketPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.fill;
+
+    // Basket colors
+    final darkBrown = Colors.brown.shade800;
+    final lightBrown = Colors.brown.shade400;
+    final mediumBrown = Colors.brown.shade600;
+
+    // Draw basket shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.3)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    final shadowPath = Path()
+      ..addOval(Rect.fromCenter(
+        center: Offset(size.width / 2, size.height - 2),
+        width: size.width * 0.9,
+        height: 8,
+      ));
+    canvas.drawPath(shadowPath, shadowPaint);
+
+    // Draw main basket body (curved bottom)
+    paint.color = darkBrown;
+    final basketPath = Path();
+    
+    // Start from top-left
+    basketPath.moveTo(10, size.height - 30);
+    
+    // Top edge
+    basketPath.lineTo(size.width - 10, size.height - 30);
+    
+    // Right side curving down
+    basketPath.quadraticBezierTo(
+      size.width - 5, size.height - 15, // control point
+      size.width - 15, size.height - 5 // end point
+    );
+    
+    // Bottom curve
+    basketPath.quadraticBezierTo(
+      size.width / 2, size.height + 5, // control point (dip down)
+      15, size.height - 5 // end point
+    );
+    
+    // Left side curving up
+    basketPath.quadraticBezierTo(
+      5, size.height - 15, // control point
+      10, size.height - 30 // back to start
+    );
+    
+    basketPath.close();
+    canvas.drawPath(basketPath, paint);
+
+    // Draw basket rim (top edge)
+    paint.color = lightBrown;
+    final rimRect = RRect.fromRectAndCorners(
+      Rect.fromLTWH(8, size.height - 35, size.width - 16, 8),
+      topLeft: const Radius.circular(4),
+      topRight: const Radius.circular(4),
+      bottomLeft: const Radius.circular(2),
+      bottomRight: const Radius.circular(2),
+    );
+    canvas.drawRRect(rimRect, paint);
+
+    // Draw woven pattern - vertical strips
+    paint.color = mediumBrown;
+    paint.strokeWidth = 3;
+    paint.style = PaintingStyle.stroke;
+    
+    for (double x = 20; x < size.width - 10; x += 12) {
+      canvas.drawLine(
+        Offset(x, size.height - 30),
+        Offset(x - 2, size.height - 8),
+        paint,
+      );
+    }
+
+    // Draw woven pattern - horizontal strips
+    paint.color = lightBrown.withOpacity(0.8);
+    paint.strokeWidth = 2;
+    
+    for (double y = size.height - 25; y < size.height - 5; y += 6) {
+      final path = Path();
+      path.moveTo(15, y);
+      path.quadraticBezierTo(
+        size.width / 2, y + 1,
+        size.width - 15, y
+      );
+      canvas.drawPath(path, paint);
+    }
+
+    // Add basket handles
+    paint.color = darkBrown;
+    paint.style = PaintingStyle.fill;
+    paint.strokeWidth = 4;
+
+    // Left handle
+    final leftHandle = Path()
+      ..addOval(Rect.fromCenter(
+        center: Offset(5, size.height - 20),
+        width: 6,
+        height: 12,
+      ));
+    canvas.drawPath(leftHandle, paint);
+
+    // Right handle
+    final rightHandle = Path()
+      ..addOval(Rect.fromCenter(
+        center: Offset(size.width - 5, size.height - 20),
+        width: 6,
+        height: 12,
+      ));
+    canvas.drawPath(rightHandle, paint);
+
+    // Add some texture dots for more realism
+    paint.color = Colors.brown.shade900.withOpacity(0.3);
+    for (int i = 0; i < 20; i++) {
+      final x = 15 + (i % 8) * 12.0;
+      final y = size.height - 25 + (i ~/ 8) * 4.0;
+      canvas.drawCircle(Offset(x, y), 1, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
