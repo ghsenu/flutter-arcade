@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
+// import 'package:audioplayers/audioplayers.dart'; // Temporarily disabled
+
+enum StarType { normal, fake, bomb, zigzag, speedChange }
 
 void main() => runApp(const MyApp());
 
@@ -27,10 +29,10 @@ class CatchStarsGame extends StatefulWidget {
 class _CatchStarsGameState extends State<CatchStarsGame> {
   final Random _random = Random();
 
-  // Sound players
-  final AudioPlayer _catchPlayer = AudioPlayer();
-  final AudioPlayer _missPlayer = AudioPlayer();
-  final AudioPlayer _gameOverPlayer = AudioPlayer();
+  // Sound players (temporarily disabled)
+  // final AudioPlayer _catchPlayer = AudioPlayer();
+  // final AudioPlayer _missPlayer = AudioPlayer();
+  // final AudioPlayer _gameOverPlayer = AudioPlayer();
 
   // Background stars
   List<Offset> backgroundStars = [];
@@ -51,20 +53,24 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
   // Star
   double starX = 100;
   double starY = -40;
-  double starSpeed = 200; // Start faster, increases over time
-
+  double starSpeed = 100; // Start slow, increases over time
+  StarType starType = StarType.normal;
+  double starDirectionX = 0; // For zigzag movement
+  bool starAboutToDisappear = false;
+  Timer? starDisappearTimer;
+  int trickyStarChance = 15; // 15% chance for tricky stars initially
   Timer? gameTimer;
 
   void _playCatchSound() {
-    _catchPlayer.play(UrlSource('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'));
+    // _catchPlayer.play(UrlSource('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'));
   }
 
   void _playMissSound() {
-    _missPlayer.play(UrlSource('https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3'));
+    // _missPlayer.play(UrlSource('https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3'));
   }
 
   void _playGameOverSound() {
-    _gameOverPlayer.play(UrlSource('https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3'));
+    // _gameOverPlayer.play(UrlSource('https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3'));
   }
 
   void _updateCombo() {
@@ -119,11 +125,12 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
 
   @override
   void dispose() {
-    _catchPlayer.dispose();
-    _missPlayer.dispose();
-    _gameOverPlayer.dispose();
+    // _catchPlayer.dispose();
+    // _missPlayer.dispose();
+    // _gameOverPlayer.dispose();
     gameTimer?.cancel();
     comboMessageTimer?.cancel();
+    starDisappearTimer?.cancel();
     super.dispose();
   }
 
@@ -133,6 +140,8 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
       score = 0;
       lives = 3;
       _resetCombo();
+      starAboutToDisappear = false;
+      starDisappearTimer?.cancel();
       basketX = (size.width - basketWidth) / 2;
       spawnStar(size);
     });
@@ -153,6 +162,45 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
   void spawnStar(Size size) {
     starX = _random.nextDouble() * (size.width - 40);
     starY = -40;
+    starAboutToDisappear = false;
+    starDisappearTimer?.cancel();
+    starDirectionX = 0;
+    
+    // Increase tricky star chance as score increases
+    int currentTrickyChance = (trickyStarChance + (score ~/ 5)).clamp(0, 60);
+    
+    // Randomly assign star type
+    if (_random.nextInt(100) < currentTrickyChance) {
+      List<StarType> trickyTypes = [StarType.fake, StarType.bomb, StarType.zigzag, StarType.speedChange];
+      starType = trickyTypes[_random.nextInt(trickyTypes.length)];
+      
+      // Set up fake star disappearing
+      if (starType == StarType.fake) {
+        double disappearTime = 1.0 + _random.nextDouble() * 2.0; // 1-3 seconds
+        starDisappearTimer = Timer(Duration(milliseconds: (disappearTime * 1000).toInt()), () {
+          setState(() {
+            starAboutToDisappear = true;
+          });
+          Timer(const Duration(milliseconds: 200), () {
+            if (starType == StarType.fake) {
+              spawnStar(size); // Spawn new star after fake one disappears
+            }
+          });
+        });
+      }
+      
+      // Set up zigzag movement
+      if (starType == StarType.zigzag) {
+        starDirectionX = (_random.nextBool() ? 1 : -1) * (50 + _random.nextDouble() * 50);
+      }
+      
+      // Random speed change for speed-change stars
+      if (starType == StarType.speedChange) {
+        starSpeed = starSpeed * (0.5 + _random.nextDouble()); // 0.5x to 1.5x speed
+      }
+    } else {
+      starType = StarType.normal;
+    }
   }
 
   void updateGame(Size size) {
@@ -178,19 +226,60 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
       spawnStar(size);
     }
 
-    // Miss
+    // Miss (but fake stars don't count as misses if they disappear)
     if (starY > size.height) {
-      _playMissSound();
-      _resetCombo();
-      setState(() => lives--);
-      if (lives <= 0) {
-        endGame();
+      if (starType != StarType.fake || !starAboutToDisappear) {
+        _playMissSound();
+        _resetCombo();
+        setState(() => lives--);
+        if (lives <= 0) {
+          endGame();
+        } else {
+          spawnStar(size);
+        }
       } else {
+        // Fake star disappeared - spawn new one without penalty
         spawnStar(size);
       }
     }
 
     setState(() {});
+  }
+
+  Widget _buildStar() {
+    switch (starType) {
+      case StarType.bomb:
+        return Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.red.withValues(alpha: 0.8),
+            border: Border.all(color: Colors.amber, width: 2),
+          ),
+          child: const Icon(Icons.star, size: 30, color: Colors.amber),
+        );
+      case StarType.fake:
+        return Icon(
+          Icons.star_outline,
+          size: 40,
+          color: Colors.grey.withValues(alpha: 0.7),
+        );
+      case StarType.zigzag:
+        return const Icon(
+          Icons.star,
+          size: 40,
+          color: Colors.cyan,
+        );
+      case StarType.speedChange:
+        return Icon(
+          Icons.star,
+          size: 40,
+          color: Colors.purple.shade300,
+        );
+      default:
+        return const Icon(Icons.star, size: 40, color: Colors.amber);
+    }
   }
 
   @override
@@ -234,7 +323,7 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
                   child: Icon(
                     Icons.star,
                     size: starSize + 2,
-                    color: Colors.white.withOpacity(opacity),
+                    color: Colors.white.withValues(alpha: opacity),
                   ),
                 );
               }),
@@ -259,6 +348,24 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                    if (score > 10)
+                      Text(
+                        '⚠️ Watch out for tricks!',
+                        style: TextStyle(
+                          color: Colors.orange.shade300,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    if (score > 10)
+                      Text(
+                        '⚠️ Watch out for tricks!',
+                        style: TextStyle(
+                          color: Colors.orange.shade300,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -278,11 +385,11 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
                     margin: const EdgeInsets.only(top: 100),
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.9),
+                      color: Colors.amber.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(25),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.amber.withOpacity(0.5),
+                          color: Colors.amber.withValues(alpha: 0.5),
                           blurRadius: 15,
                           spreadRadius: 3,
                         ),
@@ -307,11 +414,23 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
                 ),
 
               // Star
-              if (isPlaying)
+              if (isPlaying && !starAboutToDisappear)
                 Positioned(
                   left: starX,
                   top: starY,
-                  child: const Icon(Icons.star, size: 40, color: Colors.amber),
+                  child: _buildStar(),
+                ),
+              
+              // Fading fake star
+              if (isPlaying && starAboutToDisappear)
+                Positioned(
+                  left: starX,
+                  top: starY,
+                  child: AnimatedOpacity(
+                    opacity: 0.3,
+                    duration: const Duration(milliseconds: 200),
+                    child: _buildStar(),
+                  ),
                 ),
 
               // Basket - Realistic Design
@@ -368,7 +487,7 @@ class BasketPainter extends CustomPainter {
 
     // Draw basket shadow
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.3)
+      ..color = Colors.black.withValues(alpha: 0.3)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
 
     final shadowPath = Path()
@@ -435,7 +554,7 @@ class BasketPainter extends CustomPainter {
     }
 
     // Draw woven pattern - horizontal strips
-    paint.color = lightBrown.withOpacity(0.8);
+    paint.color = lightBrown.withValues(alpha: 0.8);
     paint.strokeWidth = 2;
     
     for (double y = size.height - 25; y < size.height - 5; y += 6) {
@@ -472,7 +591,7 @@ class BasketPainter extends CustomPainter {
     canvas.drawPath(rightHandle, paint);
 
     // Add some texture dots for more realism
-    paint.color = Colors.brown.shade900.withOpacity(0.3);
+    paint.color = Colors.brown.shade900.withValues(alpha: 0.3);
     for (int i = 0; i < 20; i++) {
       final x = 15 + (i % 8) * 12.0;
       final y = size.height - 25 + (i ~/ 8) * 4.0;
