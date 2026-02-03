@@ -3,7 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 // import 'package:audioplayers/audioplayers.dart'; // Temporarily disabled
 
-enum StarType { normal, fake, bomb, zigzag, speedChange, fallout }
+enum StarType { normal, fake, bomb, zigzag, speedChange, fallout, powerUp }
+enum PowerUpType { shield, slowMotion, bigBasket, extraLife, doublePoints }
 
 void main() => runApp(const MyApp());
 
@@ -64,6 +65,18 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
   Timer? directionChangeTimer;
   double falloutSpeed = 0;
   int directionChangesLeft = 0;
+  
+  // Power-up system
+  PowerUpType currentPowerUpType = PowerUpType.shield;
+  bool hasShield = false;
+  bool slowMotionActive = false;
+  bool bigBasketActive = false;
+  bool doublePointsActive = false;
+  Timer? powerUpTimer;
+  Timer? powerUpSpawnTimer;
+  String powerUpMessage = '';
+  Timer? powerUpMessageTimer;
+  double originalBasketWidth = 120;
   Timer? gameTimer;
 
   void _playCatchSound() {
@@ -128,6 +141,72 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
     });
   }
 
+  void _activatePowerUp(PowerUpType type) {
+    switch (type) {
+      case PowerUpType.shield:
+        hasShield = true;
+        _showPowerUpMessage('🛡️ SHIELD ACTIVATED!');
+        break;
+      case PowerUpType.slowMotion:
+        slowMotionActive = true;
+        _showPowerUpMessage('⏰ SLOW MOTION!');
+        powerUpTimer = Timer(const Duration(seconds: 8), () {
+          setState(() {
+            slowMotionActive = false;
+          });
+        });
+        break;
+      case PowerUpType.bigBasket:
+        bigBasketActive = true;
+        _showPowerUpMessage('🥯 BIG BASKET!');
+        powerUpTimer = Timer(const Duration(seconds: 10), () {
+          setState(() {
+            bigBasketActive = false;
+          });
+        });
+        break;
+      case PowerUpType.extraLife:
+        setState(() {
+          lives++;
+        });
+        _showPowerUpMessage('❤️ EXTRA LIFE!');
+        break;
+      case PowerUpType.doublePoints:
+        doublePointsActive = true;
+        _showPowerUpMessage('✨ DOUBLE POINTS!');
+        powerUpTimer = Timer(const Duration(seconds: 12), () {
+          setState(() {
+            doublePointsActive = false;
+          });
+        });
+        break;
+    }
+  }
+  
+  void _showPowerUpMessage(String message) {
+    setState(() {
+      powerUpMessage = message;
+    });
+    
+    powerUpMessageTimer?.cancel();
+    powerUpMessageTimer = Timer(const Duration(seconds: 2), () {
+      setState(() {
+        powerUpMessage = '';
+      });
+    });
+  }
+  
+  void _resetPowerUps() {
+    hasShield = false;
+    slowMotionActive = false;
+    bigBasketActive = false;
+    doublePointsActive = false;
+    powerUpTimer?.cancel();
+    powerUpSpawnTimer?.cancel();
+    powerUpMessage = '';
+    powerUpMessageTimer?.cancel();
+  }
+
   @override
   void dispose() {
     // _catchPlayer.dispose();
@@ -137,6 +216,9 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
     comboMessageTimer?.cancel();
     starDisappearTimer?.cancel();
     directionChangeTimer?.cancel();
+    powerUpTimer?.cancel();
+    powerUpSpawnTimer?.cancel();
+    powerUpMessageTimer?.cancel();
     super.dispose();
   }
 
@@ -146,12 +228,13 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
       score = 0;
       lives = 3;
       _resetCombo();
+      _resetPowerUps();
       starAboutToDisappear = false;
       starDisappearTimer?.cancel();
       directionChangeTimer?.cancel();
       falloutSpeed = 0;
       directionChangesLeft = 0;
-      basketX = (size.width - basketWidth) / 2;
+      basketX = (size.width - originalBasketWidth) / 2;
       spawnStar(size);
     });
 
@@ -183,8 +266,14 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
     
     // Randomly assign star type
     if (_random.nextInt(100) < currentTrickyChance) {
-      List<StarType> trickyTypes = [StarType.fake, StarType.bomb, StarType.zigzag, StarType.speedChange, StarType.fallout];
-      starType = trickyTypes[_random.nextInt(trickyTypes.length)];
+      // 8% chance for power-up when score > 15
+      if (score > 15 && _random.nextInt(100) < 8) {
+        starType = StarType.powerUp;
+        currentPowerUpType = PowerUpType.values[_random.nextInt(PowerUpType.values.length)];
+      } else {
+        List<StarType> trickyTypes = [StarType.fake, StarType.bomb, StarType.zigzag, StarType.speedChange, StarType.fallout];
+        starType = trickyTypes[_random.nextInt(trickyTypes.length)];
+      }
       
       // Set up fake star disappearing
       if (starType == StarType.fake) {
@@ -226,37 +315,84 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
   void updateGame(Size size) {
     if (!isPlaying) return;
 
-    starY += starSpeed * 0.016;
+    double speedMultiplier = slowMotionActive ? 0.4 : 1.0; // Slow motion effect
+    starY += starSpeed * 0.016 * speedMultiplier;
 
     // Keep basket inside screen
-    basketX = basketX.clamp(0.0, size.width - basketWidth);
+    double currentBasketWidth = bigBasketActive ? originalBasketWidth * 1.5 : originalBasketWidth;
+    basketX = basketX.clamp(0.0, size.width - currentBasketWidth);
 
     double basketY = size.height - 60;
 
-    // Collision
-    if (starY + 40 >= basketY &&
+    // Collision (only if star isn't about to disappear)
+    if (!starAboutToDisappear &&
+        starY + 40 >= basketY &&
         starX + 40 >= basketX &&
-        starX <= basketX + basketWidth) {
-      _playCatchSound();
-      _updateCombo();
-      setState(() {
-        score += comboMultiplier; // Apply combo multiplier to score
-        starSpeed += 40;
-      });
-      spawnStar(size);
+        starX <= basketX + currentBasketWidth) {
+      
+      if (starType == StarType.powerUp) {
+        // Power-up collected!
+        _playCatchSound();
+        _activatePowerUp(currentPowerUpType);
+        spawnStar(size);
+      } else if (starType == StarType.bomb) {
+        if (hasShield) {
+          // Shield absorbs the bomb
+          hasShield = false;
+          _showPowerUpMessage('🛡️ SHIELD USED!');
+          _playCatchSound();
+        } else {
+          // Bomb star caught - penalty!
+          _resetCombo();
+          _showComboMessage('BOMB! -2 points!');
+          setState(() {
+            score = (score - 2).clamp(0, double.infinity).toInt();
+            lives--;
+          });
+          if (lives <= 0) {
+            endGame();
+            return;
+          }
+        }
+        spawnStar(size);
+      } else if (starType == StarType.fake) {
+        // Fake star - no points, but also no penalty
+        _showComboMessage('FAKE STAR!');
+        _resetCombo();
+        spawnStar(size);
+      } else {
+        // Normal star or tricky but still gives points
+        _playCatchSound();
+        _updateCombo();
+        int pointsToAdd = comboMultiplier;
+        if (doublePointsActive) pointsToAdd *= 2;
+        setState(() {
+          score += pointsToAdd;
+          starSpeed += 20;
+        });
+        spawnStar(size);
+      }
     }
 
     // Miss (but fake stars don't count as misses if they disappear)
     if (starY > size.height) {
       if (starType != StarType.fake || !starAboutToDisappear) {
-        _playMissSound();
-        _resetCombo();
-        setState(() => lives--);
-        if (lives <= 0) {
-          endGame();
-        } else {
-          spawnStar(size);
+        if (starType != StarType.powerUp) { // Power-ups don't cause misses
+          if (hasShield && starType != StarType.fake) {
+            // Shield protects from miss
+            hasShield = false;
+            _showPowerUpMessage('🛡️ SHIELD PROTECTED!');
+          } else {
+            _playMissSound();
+            _resetCombo();
+            setState(() => lives--);
+            if (lives <= 0) {
+              endGame();
+              return;
+            }
+          }
         }
+        spawnStar(size);
       } else {
         // Fake star disappeared - spawn new one without penalty
         spawnStar(size);
@@ -319,9 +455,69 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
           size: 40,
           color: Colors.orange.shade400,
         );
+      case StarType.powerUp:
+        return Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              colors: [Colors.yellow.shade300, Colors.pink.shade300, Colors.blue.shade300],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.5),
+                blurRadius: 8,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Icon(
+            _getPowerUpIcon(),
+            size: 24,
+            color: Colors.white,
+          ),
+        );
       default:
         return const Icon(Icons.star, size: 40, color: Colors.amber);
     }
+  }
+  
+  IconData _getPowerUpIcon() {
+    switch (currentPowerUpType) {
+      case PowerUpType.shield:
+        return Icons.shield;
+      case PowerUpType.slowMotion:
+        return Icons.schedule;
+      case PowerUpType.bigBasket:
+        return Icons.open_in_full;
+      case PowerUpType.extraLife:
+        return Icons.favorite;
+      case PowerUpType.doublePoints:
+        return Icons.star_rate;
+    }
+  }
+  
+  Widget _buildPowerUpIndicator(String emoji, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.purple.shade600.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white, width: 1),
+      ),
+      child: Text(
+        '$emoji $text',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
   }
 
   @override
@@ -399,13 +595,18 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
                           fontStyle: FontStyle.italic,
                         ),
                       ),
-                    if (score > 10)
-                      Text(
-                        '⚠️ Watch out for tricks!',
-                        style: TextStyle(
-                          color: Colors.orange.shade300,
-                          fontSize: 12,
-                          fontStyle: FontStyle.italic,
+                    // Power-up indicators
+                    if (hasShield || slowMotionActive || bigBasketActive || doublePointsActive)
+                      Container(
+                        margin: const EdgeInsets.only(top: 5),
+                        child: Wrap(
+                          spacing: 5,
+                          children: [
+                            if (hasShield) _buildPowerUpIndicator('🛡️', 'Shield'),
+                            if (slowMotionActive) _buildPowerUpIndicator('⏰', 'Slow'),
+                            if (bigBasketActive) _buildPowerUpIndicator('🥯', 'Big'),
+                            if (doublePointsActive) _buildPowerUpIndicator('✨', '2x'),
+                          ],
                         ),
                       ),
                   ],
@@ -419,6 +620,45 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
                   style: const TextStyle(fontSize: 18),
                 ),
               ),
+
+              // Power-up message
+              if (powerUpMessage.isNotEmpty)
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.purple.shade400, Colors.pink.shade400],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(25),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.purple.withValues(alpha: 0.5),
+                          blurRadius: 15,
+                          spreadRadius: 3,
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      powerUpMessage,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black54,
+                            offset: Offset(2, 2),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
 
               // Combo message
               if (comboMessage.isNotEmpty)
