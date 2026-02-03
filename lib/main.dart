@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 // import 'package:audioplayers/audioplayers.dart'; // Temporarily disabled
 
-enum StarType { normal, fake, bomb, zigzag, speedChange }
+enum StarType { normal, fake, bomb, zigzag, speedChange, fallout }
 
 void main() => runApp(const MyApp());
 
@@ -29,7 +29,7 @@ class CatchStarsGame extends StatefulWidget {
 class _CatchStarsGameState extends State<CatchStarsGame> {
   final Random _random = Random();
 
-  // Sound players (temporarily disabled)
+  // Sound players (commented out to avoid dependency issues)
   // final AudioPlayer _catchPlayer = AudioPlayer();
   // final AudioPlayer _missPlayer = AudioPlayer();
   // final AudioPlayer _gameOverPlayer = AudioPlayer();
@@ -59,6 +59,11 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
   bool starAboutToDisappear = false;
   Timer? starDisappearTimer;
   int trickyStarChance = 15; // 15% chance for tricky stars initially
+  
+  // Fallout star properties
+  Timer? directionChangeTimer;
+  double falloutSpeed = 0;
+  int directionChangesLeft = 0;
   Timer? gameTimer;
 
   void _playCatchSound() {
@@ -131,6 +136,7 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
     gameTimer?.cancel();
     comboMessageTimer?.cancel();
     starDisappearTimer?.cancel();
+    directionChangeTimer?.cancel();
     super.dispose();
   }
 
@@ -142,6 +148,9 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
       _resetCombo();
       starAboutToDisappear = false;
       starDisappearTimer?.cancel();
+      directionChangeTimer?.cancel();
+      falloutSpeed = 0;
+      directionChangesLeft = 0;
       basketX = (size.width - basketWidth) / 2;
       spawnStar(size);
     });
@@ -164,14 +173,17 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
     starY = -40;
     starAboutToDisappear = false;
     starDisappearTimer?.cancel();
+    directionChangeTimer?.cancel();
     starDirectionX = 0;
+    falloutSpeed = 0;
+    directionChangesLeft = 0;
     
     // Increase tricky star chance as score increases
     int currentTrickyChance = (trickyStarChance + (score ~/ 5)).clamp(0, 60);
     
     // Randomly assign star type
     if (_random.nextInt(100) < currentTrickyChance) {
-      List<StarType> trickyTypes = [StarType.fake, StarType.bomb, StarType.zigzag, StarType.speedChange];
+      List<StarType> trickyTypes = [StarType.fake, StarType.bomb, StarType.zigzag, StarType.speedChange, StarType.fallout];
       starType = trickyTypes[_random.nextInt(trickyTypes.length)];
       
       // Set up fake star disappearing
@@ -197,6 +209,14 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
       // Random speed change for speed-change stars
       if (starType == StarType.speedChange) {
         starSpeed = starSpeed * (0.5 + _random.nextDouble()); // 0.5x to 1.5x speed
+      }
+      
+      // Set up fallout star with sudden direction changes
+      if (starType == StarType.fallout) {
+        falloutSpeed = 80 + _random.nextDouble() * 120; // Random horizontal speed
+        starDirectionX = (_random.nextBool() ? 1 : -1) * falloutSpeed;
+        directionChangesLeft = 2 + _random.nextInt(4); // 2-5 direction changes
+        _scheduleFalloutDirectionChange();
       }
     } else {
       starType = StarType.normal;
@@ -246,6 +266,22 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
     setState(() {});
   }
 
+  void _scheduleFalloutDirectionChange() {
+    if (directionChangesLeft > 0) {
+      double nextChangeTime = 0.3 + _random.nextDouble() * 0.8; // 0.3-1.1 seconds
+      directionChangeTimer = Timer(Duration(milliseconds: (nextChangeTime * 1000).toInt()), () {
+        if (starType == StarType.fallout && isPlaying) {
+          // Sudden direction change!
+          falloutSpeed = 60 + _random.nextDouble() * 140;
+          starDirectionX = (_random.nextBool() ? 1 : -1) * falloutSpeed;
+          directionChangesLeft--;
+          _showComboMessage('FALLOUT!');
+          _scheduleFalloutDirectionChange(); // Schedule next change
+        }
+      });
+    }
+  }
+
   Widget _buildStar() {
     switch (starType) {
       case StarType.bomb:
@@ -276,6 +312,12 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
           Icons.star,
           size: 40,
           color: Colors.purple.shade300,
+        );
+      case StarType.fallout:
+        return Icon(
+          Icons.star,
+          size: 40,
+          color: Colors.orange.shade400,
         );
       default:
         return const Icon(Icons.star, size: 40, color: Colors.amber);
