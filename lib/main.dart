@@ -525,7 +525,7 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Catch the Falling Stars'),
-        backgroundColor: const Color(0xFF0D1B2A),
+        backgroundColor: const Color(0xFF2D7DD2),
         foregroundColor: Colors.white,
       ),
       body: LayoutBuilder(
@@ -534,37 +534,11 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
 
           return Stack(
             children: [
-              // Night sky background
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFF0D1B2A), // Dark blue
-                      Color(0xFF1B263B), // Midnight blue
-                      Color(0xFF415A77), // Lighter blue at horizon
-                    ],
-                  ),
-                ),
+              // Realistic daytime sky background
+              CustomPaint(
+                size: Size(size.width, size.height),
+                painter: SkyBackgroundPainter(),
               ),
-
-              // Background twinkling stars
-              ...List.generate(50, (index) {
-                final x = (index * 37 + 13) % size.width.toInt();
-                final y = (index * 53 + 7) % size.height.toInt();
-                final starSize = (index % 3 + 1) * 1.0;
-                final opacity = 0.3 + (index % 7) * 0.1;
-                return Positioned(
-                  left: x.toDouble(),
-                  top: y.toDouble(),
-                  child: Icon(
-                    Icons.star,
-                    size: starSize + 2,
-                    color: Colors.white.withValues(alpha: opacity),
-                  ),
-                );
-              }),
 
               // Score & lives
               Positioned(
@@ -754,6 +728,111 @@ class _CatchStarsGameState extends State<CatchStarsGame> {
       ),
     ) ;
   }
+}
+
+class SkyBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final skyPaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0xFF1E5FA8),
+          Color(0xFF5FB3FF),
+          Color(0xFFAEDBFF),
+          Color(0xFFF7FBFF),
+        ],
+        stops: [0.0, 0.5, 0.8, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRect(Offset.zero & size, skyPaint);
+
+    final sunCenter = Offset(size.width * 0.8, size.height * 0.18);
+    final sunGlow = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          const Color(0xFFFFF2B2).withValues(alpha: 0.9),
+          const Color(0xFFFFD27D).withValues(alpha: 0.45),
+          const Color(0xFFFFD27D).withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromCircle(center: sunCenter, radius: 180));
+    canvas.drawCircle(sunCenter, 180, sunGlow);
+
+    final sunPaint = Paint()..color = const Color(0xFFFFF2B2);
+    canvas.drawCircle(sunCenter, 28, sunPaint);
+
+    final hazePaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Colors.white.withValues(alpha: 0.0),
+          Colors.white.withValues(alpha: 0.12),
+          Colors.white.withValues(alpha: 0.25),
+        ],
+        stops: const [0.0, 0.7, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRect(Offset.zero & size, hazePaint);
+
+    _drawCloud(canvas, size, 0.15, 0.18, 0.26, 0.14, 0.75);
+    _drawCloud(canvas, size, 0.62, 0.24, 0.32, 0.16, 0.65);
+    _drawCloud(canvas, size, 0.3, 0.36, 0.38, 0.18, 0.55);
+    _drawCloud(canvas, size, 0.72, 0.48, 0.28, 0.14, 0.5);
+  }
+
+  void _drawCloud(
+    Canvas canvas,
+    Size size,
+    double x,
+    double y,
+    double width,
+    double height,
+    double opacity,
+  ) {
+    final cloudPaint = Paint()..color = Colors.white.withValues(alpha: opacity);
+    final shadowPaint = Paint()
+      ..color = const Color(0xFFDDEBFF).withValues(alpha: opacity * 0.6);
+
+    final cloudRect = Rect.fromLTWH(
+      size.width * x,
+      size.height * y,
+      size.width * width,
+      size.height * height,
+    );
+
+    final base = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        cloudRect.left,
+        cloudRect.top + cloudRect.height * 0.35,
+        cloudRect.width,
+        cloudRect.height * 0.5,
+      ),
+      Radius.circular(cloudRect.height * 0.25),
+    );
+
+    canvas.drawRRect(base, shadowPaint);
+
+    canvas.drawCircle(
+      Offset(cloudRect.left + cloudRect.width * 0.2, cloudRect.top + cloudRect.height * 0.45),
+      cloudRect.height * 0.35,
+      cloudPaint,
+    );
+    canvas.drawCircle(
+      Offset(cloudRect.left + cloudRect.width * 0.45, cloudRect.top + cloudRect.height * 0.3),
+      cloudRect.height * 0.45,
+      cloudPaint,
+    );
+    canvas.drawCircle(
+      Offset(cloudRect.left + cloudRect.width * 0.7, cloudRect.top + cloudRect.height * 0.45),
+      cloudRect.height * 0.35,
+      cloudPaint,
+    );
+    canvas.drawRRect(base, cloudPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class BasketPainter extends CustomPainter {
